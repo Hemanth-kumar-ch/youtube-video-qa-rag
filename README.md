@@ -30,5 +30,5 @@ You will need the following installed:
 ### Step 1: Clone the Repository
 
 ```bash
-git clone <YOUR_REPOSITORY_URL>
-cd your-project-directory
+git clone https://github.com/Hemanth-kumar-ch/youtube-video-qa-rag.git
+cd youtube-video-qa-rag.git
