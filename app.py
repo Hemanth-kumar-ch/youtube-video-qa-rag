@@ -31,16 +31,7 @@ class SentenceTransformerEmbeddings(Embeddings):
 
 # Extract video ID from YouTube URL
 def extract_video_id(url):
-    patterns = [
-        r'(?:v=|\/)([0-9A-Za-z_-]{11}).*',
-        r'(?:embed\/)([0-9A-Za-z_-]{11})',
-        r'^([0-9A-Za-z_-]{11})$'
-    ]
-    for pattern in patterns:
-        match = re.search(pattern, url)
-        if match:
-            return match.group(1)
-    return None
+    return url.split("=")[1]
 
 # Fetch video metadata (channel name, title)
 @st.cache_data
