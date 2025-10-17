@@ -66,20 +66,22 @@ def format_docs(retrieved_docs):
 # Send a prompt to Google's Gemini AI and get the response
 def call_gemini(prompt_text):
     try:
-       api_key = os.getenv('Google_api_key')
-        if not api_key:
-            st.error("Can't find your Google API key. Add it to your .env file!")
-            return "Error: API key not set up"
-     
-        client = genai.Client(api_key=api_key)
-        response = client.models.generate_content(
-            model="gemini-2.0-flash-exp", 
-            contents=prompt_text
-        )
-        return response.text
+            # Get the API key from environment variables
+            api_key = os.getenv('Google_api_key')
+            if not api_key:
+                st.error("Can't find your Google API key. Add it to your .env file!")
+                return "Error: API key not set up"
+            
+            # Connect to Gemini and generate a response
+            client = genai.Client(api_key=api_key)
+            response = client.models.generate_content(
+                model="gemini-2.0-flash-exp", 
+                contents=prompt_text
+            )
+            return response.text
     except Exception as e:
-        st.error(f"Gemini API error: {str(e)}")
-        return f"Error: {str(e)}"
+            st.error(f"Gemini API error: {str(e)}")
+            return f"Error: {str(e)}"
 
 def main():
     st.set_page_config(
