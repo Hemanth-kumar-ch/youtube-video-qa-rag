@@ -40,26 +40,19 @@ def extract_video_id(url):
 @st.cache_data
 def fetch_transcript(video_id):
     try:
-        # Fetch the English transcript
-        transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['en'])
-        # Join all the text pieces together
-        transcript = " ".join([item['text'] for item in transcript_list])
+        transcript_list = YouTubeTranscriptApi().fetch(video_id,languages=['en'])
+        transcript = " ".join([item.text for item in transcript_list])
         return transcript
     except Exception as e:
-        st.error(f"Couldn't get the transcript: {str(e)}")
+        st.error(f"Error fetching transcript: {str(e)}")
         return None
-
 # Create a vector store from the transcript so we can search through it
 @st.cache_resource
 def create_vector_store(transcript):
     # Break the transcript into smaller chunks (1000 characters each)
     splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
     chunks = splitter.split_text(transcript)
-    
-    # Turn each chunk into a Document object
     docs = [Document(page_content=chunk) for chunk in chunks]
-    
-    # Create the embedding model
     embedding = SentenceTransformerEmbeddings()
     
     # Build the searchable vector store using FAISS
@@ -73,13 +66,11 @@ def format_docs(retrieved_docs):
 # Send a prompt to Google's Gemini AI and get the response
 def call_gemini(prompt_text):
     try:
-        # Get the API key from environment variables
-        api_key = os.getenv('Google_api_key')
+       api_key = os.getenv('Google_api_key')
         if not api_key:
             st.error("Can't find your Google API key. Add it to your .env file!")
             return "Error: API key not set up"
-        
-        # Connect to Gemini and generate a response
+     
         client = genai.Client(api_key=api_key)
         response = client.models.generate_content(
             model="gemini-2.0-flash-exp", 
@@ -90,9 +81,7 @@ def call_gemini(prompt_text):
         st.error(f"Gemini API error: {str(e)}")
         return f"Error: {str(e)}"
 
-# Main function that runs the Streamlit app
 def main():
-    # Set up the page
     st.set_page_config(
         page_title="YouTube RAG Q&A",
         page_icon="🎥",
