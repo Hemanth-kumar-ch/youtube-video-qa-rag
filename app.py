@@ -5,131 +5,94 @@ from langchain_community.vectorstores import FAISS
 from langchain.docstore.document import Document
 from langchain.embeddings.base import Embeddings
 from sentence_transformers import SentenceTransformer
-from langchain_core.prompts import PromptTemplate
-from langchain_core.runnables import RunnableParallel, RunnablePassthrough, RunnableLambda
-from langchain_core.output_parsers import StrOutputParser
 from google import genai
 import os
 from dotenv import load_dotenv
-import re
-import requests
-from bs4 import BeautifulSoup
 
-# Load environment variables
+# Load API keys from .env file
 load_dotenv()
 
-# Custom Embeddings class
+# Create a custom embeddings class using SentenceTransformer
 class SentenceTransformerEmbeddings(Embeddings):
     def __init__(self, model_name="all-MiniLM-L6-v2"):
         self.model = SentenceTransformer(model_name)
 
     def embed_documents(self, texts):
+        # Convert texts to embeddings for the vector store
         return self.model.encode(texts, show_progress_bar=False).tolist()
 
     def embed_query(self, text):
+        # Convert a single query to an embedding
         return self.model.encode([text])[0].tolist()
 
-# Extract video ID from YouTube URL
+# Extract the video ID from a YouTube URL
 def extract_video_id(url):
-    return url.split("=")[1]
-
-# Fetch video metadata (channel name, title)
-@st.cache_data
-def fetch_video_metadata(video_id):
     try:
-        url = f"https://www.youtube.com/watch?v={video_id}"
-        response = requests.get(url, timeout=10)
-        soup = BeautifulSoup(response.text, 'html.parser')
-        
-        # Extract title and channel name
-        title = soup.find('meta', property='og:title')
-        title = title['content'] if title else "Unknown Title"
-        
-        # Try to find channel name
-        channel = None
-        scripts = soup.find_all('script')
-        for script in scripts:
-            if script.string and '"author"' in script.string:
-                match = re.search(r'"author":"([^"]+)"', script.string)
-                if match:
-                    channel = match.group(1)
-                    break
-        
-        return {
-            'title': title,
-            'channel': channel or "Unknown Channel",
-            'url': url
-        }
-    except Exception as e:
-        st.warning(f"Could not fetch video metadata: {str(e)}")
-        return {
-            'title': "Unknown Title",
-            'channel': "Unknown Channel",
-            'url': f"https://www.youtube.com/watch?v={video_id}"
-        }
+        # If someone just pasted the video ID (11 characters), return it
+        if len(url) == 11 and '=' not in url:
+            return url
+        # Otherwise, extract it from the URL after the "v=" part
+        return url.split("=")[1].split("&")[0]
+    except:
+        return None
 
-# Fetch transcript
+# Get the transcript text from a YouTube video
 @st.cache_data
 def fetch_transcript(video_id):
     try:
+        # Fetch the English transcript
         transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['en'])
+        # Join all the text pieces together
         transcript = " ".join([item['text'] for item in transcript_list])
         return transcript
     except Exception as e:
-        st.error(f"Error fetching transcript: {str(e)}")
+        st.error(f"Couldn't get the transcript: {str(e)}")
         return None
 
-# Create vector store
+# Create a vector store from the transcript so we can search through it
 @st.cache_resource
-def create_vector_store(transcript, metadata):
-    # Split text into chunks
+def create_vector_store(transcript):
+    # Break the transcript into smaller chunks (1000 characters each)
     splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
-    
-    # Add metadata to each chunk
     chunks = splitter.split_text(transcript)
-    docs = [
-        Document(
-            page_content=chunk,
-            metadata={
-                'channel': metadata['channel'],
-                'title': metadata['title'],
-                'source': 'youtube_transcript'
-            }
-        ) for chunk in chunks
-    ]
     
-    # Create embeddings
+    # Turn each chunk into a Document object
+    docs = [Document(page_content=chunk) for chunk in chunks]
+    
+    # Create the embedding model
     embedding = SentenceTransformerEmbeddings()
     
-    # Build FAISS vector store
+    # Build the searchable vector store using FAISS
     vector_store = FAISS.from_documents(docs, embedding)
     return vector_store
 
-# Format documents with metadata
+# Format the retrieved documents into a single string
 def format_docs(retrieved_docs):
-    formatted = []
-    for doc in retrieved_docs:
-        formatted.append(doc.page_content)
-    return "\n\n".join(formatted)
+    return "\n\n".join(doc.page_content for doc in retrieved_docs)
 
-# Call Gemini LLM with properly formatted prompt
-def call_gemini(formatted_prompt):
+# Send a prompt to Google's Gemini AI and get the response
+def call_gemini(prompt_text):
     try:
+        # Get the API key from environment variables
         api_key = os.getenv('Google_api_key')
         if not api_key:
-            st.error("Google API key not found. Please set it in your .env file.")
-            return "Error: API key not configured"
+            st.error("Can't find your Google API key. Add it to your .env file!")
+            return "Error: API key not set up"
         
+        # Connect to Gemini and generate a response
         client = genai.Client(api_key=api_key)
-        model = "gemini-2.0-flash-exp"
-        response = client.models.generate_content(model=model, contents=formatted_prompt)
+        response = client.models.generate_content(
+            model="gemini-2.0-flash-exp", 
+            contents=prompt_text
+        )
         return response.text
     except Exception as e:
-        st.error(f"Error calling Gemini API: {str(e)}")
+        st.error(f"Gemini API error: {str(e)}")
         return f"Error: {str(e)}"
 
-# Main Streamlit app
+# Main function that runs the Streamlit app
 def main():
+    # Set up the page
     st.set_page_config(
         page_title="YouTube RAG Q&A",
         page_icon="🎥",
@@ -137,9 +100,9 @@ def main():
     )
     
     st.title("🎥 YouTube Video Q&A with RAG")
-    st.markdown("Ask questions about any YouTube video using AI-powered analysis!")
+    st.markdown("Ask questions about any YouTube video using AI!")
     
-    # Sidebar for video input
+    # Sidebar - where users enter the video URL
     with st.sidebar:
         st.header("📹 Video Settings")
         video_url = st.text_input(
@@ -152,164 +115,134 @@ def main():
         st.markdown("---")
         st.markdown("### 📝 How to use:")
         st.markdown("""
-        1. Enter a YouTube video URL or ID
+        1. Paste a YouTube video URL or ID
         2. Click 'Process Video'
-        3. Wait for transcript processing
-        4. Ask questions about the video
+        3. Wait for the transcript to load
+        4. Ask any questions about the video
         """)
     
-    # Initialize session state
+    # Initialize session state variables (these persist across reruns)
     if 'vector_store' not in st.session_state:
         st.session_state.vector_store = None
     if 'video_id' not in st.session_state:
         st.session_state.video_id = None
     if 'chat_history' not in st.session_state:
         st.session_state.chat_history = []
-    if 'video_metadata' not in st.session_state:
-        st.session_state.video_metadata = None
-    if 'processing' not in st.session_state:
-        st.session_state.processing = False
     
-    # Process video when button is clicked
+    # When user clicks "Process Video"
     if process_button and video_url:
         video_id = extract_video_id(video_url)
         
+        # Check if we got a valid video ID
         if not video_id:
-            st.error("❌ Invalid YouTube URL or Video ID")
+            st.error("❌ That doesn't look like a valid YouTube URL or ID")
             return
         
         st.session_state.video_id = video_id
-        st.session_state.processing = True
         
-        # Fetch metadata
-        with st.spinner("Fetching video metadata..."):
-            metadata = fetch_video_metadata(video_id)
-            st.session_state.video_metadata = metadata
-        
-        with st.spinner("Fetching transcript..."):
+        # Fetch the video transcript
+        with st.spinner("Getting the video transcript..."):
             transcript = fetch_transcript(video_id)
         
+        # If we successfully got the transcript
         if transcript:
-            st.success("✅ Transcript fetched successfully!")
+            st.success("✅ Got the transcript!")
             
-            with st.spinner("Creating vector store..."):
-                st.session_state.vector_store = create_vector_store(transcript, metadata)
+            # Create the vector store for searching
+            with st.spinner("Setting up the search system..."):
+                st.session_state.vector_store = create_vector_store(transcript)
             
-            st.success("✅ Vector store created! You can now ask questions.")
-            st.session_state.chat_history = []  # Reset chat history
+            st.success("✅ Ready! You can now ask questions.")
+            st.session_state.chat_history = []  # Clear any old chat history
         else:
-            st.error("❌ Failed to fetch transcript. The video might not have captions available.")
-        
-        st.session_state.processing = False
+            st.error("❌ Couldn't get the transcript. This video might not have captions.")
     
-    # Display video if available
+    # Show the video player if we have a video loaded
     if st.session_state.video_id:
         col1, col2 = st.columns([2, 1])
         
         with col1:
+            # Embed the YouTube video
             st.video(f"https://www.youtube.com/watch?v={st.session_state.video_id}")
         
         with col2:
-            if st.session_state.video_metadata:
-                st.info(f"**📺 Channel:** {st.session_state.video_metadata['channel']}")
-                st.info(f"**🎬 Title:** {st.session_state.video_metadata['title']}")
-                st.info(f"**🆔 Video ID:** {st.session_state.video_id}")
-            else:
-                st.info(f"**Video ID:** {st.session_state.video_id}")
+            st.info(f"**🆔 Video ID:** {st.session_state.video_id}")
             
+            # Button to clear everything and start over
             if st.button("🗑️ Clear Video"):
                 st.session_state.vector_store = None
                 st.session_state.video_id = None
                 st.session_state.chat_history = []
-                st.session_state.video_metadata = None
                 st.rerun()
     
-    # Q&A Section
+    # Q&A Section - only show if we have a vector store ready
     if st.session_state.vector_store:
         st.markdown("---")
         st.header("💬 Ask Questions")
         
-        # Display chat history
+        # Display all previous questions and answers
         if st.session_state.chat_history:
-            for i, (q, a) in enumerate(st.session_state.chat_history):
+            for i, (question, answer) in enumerate(st.session_state.chat_history):
                 with st.container():
-                    st.markdown(f"**❓ Question {i+1}:** {q}")
-                    with st.container():
-                        st.markdown(f"**💡 Answer:**")
-                        st.markdown(a)
+                    st.markdown(f"**❓ Question {i+1}:** {question}")
+                    st.markdown(f"**💡 Answer:**")
+                    st.markdown(answer)
                     st.markdown("---")
         
-        # Question input form to prevent double submission
+        # Form for asking new questions (prevents double submissions)
         with st.form(key='question_form', clear_on_submit=True):
             question = st.text_input(
-                "Enter your question:",
-                placeholder="e.g., What is this video about? Who is the YouTuber?",
+                "Your question:",
+                placeholder="e.g., What is this video about?",
                 key="question_input"
             )
             
-            col1, col2, col3 = st.columns([1, 1, 4])
+            col1, col2 = st.columns([1, 5])
             with col1:
                 ask_button = st.form_submit_button("Ask", type="primary")
             with col2:
                 clear_button = st.form_submit_button("Clear Chat")
         
-        # Handle clear chat button
+        # Clear the chat history if requested
         if clear_button:
             st.session_state.chat_history = []
             st.rerun()
         
-        # Handle ask button
+        # Process the question
         if ask_button and question.strip():
-            with st.spinner("🤔 Generating answer..."):
-                # Create retriever
+            with st.spinner("🤔 Thinking..."):
+                # Search the vector store for relevant chunks
                 retriever = st.session_state.vector_store.as_retriever(
                     search_type="similarity",
-                    search_kwargs={"k": 4}
+                    search_kwargs={"k": 4}  # Get the top 4 most relevant chunks
                 )
                 
-                # Get relevant documents
+                # Get the relevant document chunks
                 retrieved_docs = retriever.invoke(question)
                 context = format_docs(retrieved_docs)
                 
-                # Add metadata context
-                metadata_context = f"""
-Video Information:
-- Channel/YouTuber: {st.session_state.video_metadata['channel']}
-- Video Title: {st.session_state.video_metadata['title']}
+                # Create the prompt for Gemini
+                prompt = f"""You are a helpful assistant. Answer the question based on the video transcript below.
+If you can't find the answer in the transcript, just say you don't know.
 
-Transcript Content:
-{context}
-"""
-                
-                # Create prompt template
-                prompt_template = """You are a helpful assistant analyzing a YouTube video.
-
-Use the following video information and transcript to answer the question.
-If asked about the YouTuber or channel name, use the metadata provided.
-Answer based ONLY on the information provided.
-If you cannot find the answer in the context, say "I don't have enough information to answer that."
-
+Video Transcript:
 {context}
 
 Question: {question}
 
 Answer:"""
                 
-                # Format the prompt
-                formatted_prompt = prompt_template.format(
-                    context=metadata_context,
-                    question=question
-                )
+                # Get the answer from Gemini
+                answer = call_gemini(prompt)
                 
-                # Get answer from Gemini
-                answer = call_gemini(formatted_prompt)
-                
-                # Add to chat history (only once)
+                # Save this Q&A to the chat history
                 st.session_state.chat_history.append((question, answer))
                 st.rerun()
     
     else:
-        st.info("👈 Please enter a YouTube URL in the sidebar and click 'Process Video' to get started!")
+        # Show this message if no video has been processed yet
+        st.info("👈 Enter a YouTube URL in the sidebar and click 'Process Video' to start!")
 
+# Run the app
 if __name__ == "__main__":
     main()
