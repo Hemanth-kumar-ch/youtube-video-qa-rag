@@ -2,7 +2,7 @@ import streamlit as st
 from youtube_transcript_api import YouTubeTranscriptApi
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
-from langchain.docstore.document import Document
+from langchain_core.documents import Document
 from langchain.embeddings.base import Embeddings
 from sentence_transformers import SentenceTransformer
 from google import genai
