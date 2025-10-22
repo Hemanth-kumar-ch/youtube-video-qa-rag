@@ -54,7 +54,6 @@ def fetch_transcript(video_id):
 # Create a vector store from the transcript
 @st.cache_resource
 def create_vector_store(transcript):
-    splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
     chunks = simple_split_text(transcript)
     docs = [Document(page_content=chunk) for chunk in chunks]
     embedding = SentenceTransformerEmbeddings()
