@@ -1,7 +1,6 @@
 import streamlit as st
 from youtube_transcript_api import YouTubeTranscriptApi
 from langchain_community.vectorstores import FAISS
-from langchain.schema import Document  
 from langchain.embeddings.base import Embeddings
 from sentence_transformers import SentenceTransformer
 from google import genai
