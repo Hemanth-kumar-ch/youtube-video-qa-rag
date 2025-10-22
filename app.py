@@ -1,6 +1,8 @@
 import streamlit as st
 from youtube_transcript_api import YouTubeTranscriptApi
+from langchain.text_splitter import RecursiveCharacterTextSplitter 
 from langchain_community.vectorstores import FAISS
+from langchain.schema import Document  
 from langchain.embeddings.base import Embeddings
 from sentence_transformers import SentenceTransformer
 from google import genai
@@ -20,16 +22,6 @@ class SentenceTransformerEmbeddings(Embeddings):
 
     def embed_query(self, text):
         return self.model.encode([text])[0].tolist()
-
-#Using custom defined text splitter
-def simple_split_text(text, chunk_size=1000, overlap=200):
-    chunks = []
-    start = 0
-    while start < len(text):
-        end = min(start + chunk_size, len(text))
-        chunks.append(text[start:end])
-        start += chunk_size - overlap
-    return chunks
 
 # Extract the video ID from a YouTube URL
 def extract_video_id(url):
@@ -54,7 +46,8 @@ def fetch_transcript(video_id):
 # Create a vector store from the transcript
 @st.cache_resource
 def create_vector_store(transcript):
-    chunks = simple_split_text(transcript)
+    splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+    chunks = splitter.split_text(transcript)
     docs = [Document(page_content=chunk) for chunk in chunks]
     embedding = SentenceTransformerEmbeddings()
     vector_store = FAISS.from_documents(docs, embedding)
