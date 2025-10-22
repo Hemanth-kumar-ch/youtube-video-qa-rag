@@ -1,8 +1,8 @@
 import streamlit as st
 from youtube_transcript_api import YouTubeTranscriptApi
-from langchain.text_splitter import RecursiveCharacterTextSplitter  # updated import
+from langchain.text_splitter import RecursiveCharacterTextSplitter 
 from langchain_community.vectorstores import FAISS
-from langchain.schema import Document  # updated import
+from langchain.schema import Document  
 from langchain.embeddings.base import Embeddings
 from sentence_transformers import SentenceTransformer
 from google import genai
